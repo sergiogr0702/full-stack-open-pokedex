@@ -1,5 +1,8 @@
 name: Deployment pipeline
 
+env:
+  DEPLOY: ${{ github.event_name == 'push' && !contains(toJson(github.event.commits.*.message), '#skip') }}
+
 on:
   push:
     branches:
@@ -11,10 +14,9 @@ on:
 jobs:
   simple_deployment_pipeline:
     runs-on: ubuntu-20.04
-    env:
-      SKIP_DEPLOYMENT: ${{ contains(join(github.event.commits.*.message, ' '), '#skip') }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -24,15 +26,19 @@ jobs:
 
       - name: Check style
         run: npm run eslint
+
       - name: Build
         run: npm run build
+
       - name: Run Jest tests
         run: npm test
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
+
       - name: Run Playwright tests
         run: npm run test:e2e
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -40,28 +46,40 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
-      - name: Check for
-        run: echo ${{ env.SKIP_DEPLOYMENT }}
-
       - name: Trigger deployment
-        if: ${{ github.event_name == 'push' && env.SKIP_DEPLOYMENT == 'false' }}
+        if: ${{ env.DEPLOY == 'true' }}
         run: curl https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_API_KEY }}
+
+      - name: Build Success
+        if: ${{ success() && env.DEPLOY }}
+        uses: hunghg255/action-notifications@894db3cd6f36df54782882ec35daf3880dfeb5bd
+        with:
+          discord_webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title:  "New version of Pokedex deployed"
+          description: ${{ github.event.head_commit.message }}
+      
+      - name: Build Failure
+        if: ${{ failure() }}
+        uses: hunghg255/action-notifications@894db3cd6f36df54782882ec35daf3880dfeb5bd
+        with:
+          discord_webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title:  "Build failed"
+          description: ${{ github.event.head_commit.message }}
+
 
   tag_release:
     needs: [simple_deployment_pipeline]
     runs-on: ubuntu-20.04
     permissions:
       contents: write
-    env:
-      SKIP_DEPLOYMENT: ${{ contains(join(github.event.commits.*.message, ' '), '#skip') }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
       - name: Bump version and push tag
-        if: ${{ github.event_name == 'push' && env.SKIP_DEPLOYMENT == 'false' }}
-        uses: anothrNick/github-tag-action@1.70.0
+        if: ${{ env.DEPLOY == 'true' }}
+        uses: anothrNick/github-tag-action@777684df761b882a3f4f70db16ac70d8cc78d0ea
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEFAULT_BUMP: patch
