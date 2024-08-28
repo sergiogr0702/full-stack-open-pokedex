@@ -1,0 +1,18 @@
+name: Periodic Health Check
+
+on:
+  schedule:
+    - cron: 59 23 * * 5
+      
+jobs:
+  periodic_health_check_job:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Check the deployed service URL
+        uses: jtalk/url-health-check-action@v4
+        with:
+          url: https://full-stack-open-pokedex-4lt9.onrender.com/
+          follow-redirect: false
+          max-attempts: 5
+          retry-delay: 40s
+          retry-all: false
